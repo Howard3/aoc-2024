@@ -12,9 +12,9 @@ type Report struct {
 	Values []int
 }
 
-func (r Report) IsSafe() bool {
-	incSafely := r.isIncreasingSafely(r.Values, 1, 3, 1)
-	decSafely := r.isIncreasingSafely(r.Values, -3, -1, 1) // technically decreasing. lol.
+func (r Report) IsSafe(damper int) bool {
+	incSafely := r.isIncreasingSafely(r.Values, 1, 3, damper)
+	decSafely := r.isIncreasingSafely(r.Values, -3, -1, damper) // technically decreasing. lol.
 
 	return incSafely || decSafely
 }
@@ -85,11 +85,11 @@ func (r *Reports) AddRawReport(reportLine []byte) error {
 	return nil
 }
 
-func (r *Reports) GetSafeReports() []Report {
+func (r *Reports) GetSafeReports(damper int) []Report {
 	safeReports := make([]Report, 0)
 
 	for _, report := range r.Report {
-		if report.IsSafe() {
+		if report.IsSafe(damper) {
 			safeReports = append(safeReports, report)
 		}
 	}
@@ -124,6 +124,7 @@ func main() {
 	}
 
 	slog.Info("finished reading reports", "count", len(reports.Report))
-	safeReports := reports.GetSafeReports()
-	slog.Info("found safe reports", "count", len(safeReports))
+	safeReports := reports.GetSafeReports(0)
+	safeReportsWithDamper := reports.GetSafeReports(1)
+	slog.Info("found safe reports", "part1", len(safeReports), "part2", len(safeReportsWithDamper))
 }
