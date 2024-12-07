@@ -7,22 +7,28 @@ defmodule GuardSimulator do
       |> String.split("\n")
       |> Enum.map(&process_map_line/1)
 
-    {guard_position, guard_dir} = get_guard_orientation(map)
+    {guard_position = {guard_x, guard_y}, guard_dir} = guard_orientation = get_guard_orientation(map)
 
-    %GuardSimulator{map: map, guard_pos: guard_position, guard_dir: guard_dir, visited: [{guard_position, guard_dir}]}
+    map = map |> List.update_at(guard_y, fn row -> List.update_at(row, guard_x, fn _ -> {:space} end) end)
+
+    %GuardSimulator{map: map, guard_pos: guard_position, guard_dir: guard_dir, visited: [guard_orientation]}
   end
 
   def run_guard_simulation(data = %__MODULE__{}) do
     case move_guard(data) do
       {:off_map} -> data
       {:infinite_loop} -> :infinite_loop
-      {:rotate, new_rotation} -> %__MODULE__{data | guard_dir: new_rotation} |> run_guard_simulation()
-      {:move, new_pos} -> data |> update_pos(new_pos) |> run_guard_simulation()
+      {:rotate, new_rotation} -> %__MODULE__{data | guard_dir: new_rotation} |> record_visited |> run_guard_simulation()
+      {:move, new_pos} -> data |> update_pos(new_pos) |> record_visited |> run_guard_simulation()
     end
   end
 
-  defp update_pos(data = %__MODULE__{guard_dir: guard_dir}, pos = {_, _}),
-    do: %__MODULE__{data | guard_pos: pos, visited: [{pos, guard_dir} | data.visited]}
+  defp update_pos(data = %__MODULE__{}, pos = {_, _}),
+    do: %__MODULE__{data | guard_pos: pos}
+
+  defp record_visited(data = %__MODULE__{guard_pos: guard_pos, guard_dir: guard_dir, visited: visited}) do
+    %__MODULE__{data | visited: [{guard_pos, guard_dir} | visited]}
+  end
 
   defp move_guard(data = %__MODULE__{guard_pos: {x, y}, guard_dir: :up}), do: confirm_or_rotate(data, {x, y - 1})
   defp move_guard(data = %__MODULE__{guard_pos: {x, y}, guard_dir: :down}), do: confirm_or_rotate(data, {x, y + 1})
@@ -39,7 +45,6 @@ defmodule GuardSimulator do
 
       true ->
         case get_cell(data, new_coords) do
-          {:guard, _} -> {:move, new_coords}
           {:space} -> {:move, new_coords}
           {:obstacle} -> {:rotate, new_rotation(data.guard_dir)}
         end
@@ -97,29 +102,34 @@ defmodule GuardGallivant do
     guard_simulated = GuardSimulator.run_guard_simulation(guard_initial_state)
 
     guard_simulated.visited
-    |> Enum.uniq_by(fn {pos, _dir} -> pos end)
-    |> length()
-    |> print(1)
-
-    guard_simulated.visited
-    |> Enum.filter(fn visited -> visited != guard_initial_state.guard_pos end)
-    |> Enum.uniq_by(fn {pos, _dir} -> pos end)
+    |> Enum.filter(fn {pos, _} -> pos != guard_initial_state.guard_pos end)
+    |> Enum.map(fn {pos, _dir} -> pos end)
+    |> Enum.uniq()
     |> Enum.map(&Task.async(fn -> simulated_obstacle_results_in_infinite_loop?(guard_initial_state, &1) end))
     |> Enum.map(&Task.await/1)
     |> Enum.filter(fn {_, is_infinite_loop?} -> is_infinite_loop? end)
     |> length()
     |> print(2)
+
+    guard_simulated.visited
+    |> Enum.uniq_by(fn {pos, _dir} -> pos end)
+    |> length()
+    |> print(1)
+
+    dbg(guard_initial_state.guard_pos)
   end
 
   defp print(v, step), do: IO.puts("Step #{step}: #{v}")
 
-  defp simulated_obstacle_results_in_infinite_loop?(guard_simulator, {obstacle_position = {x, y}, _}) do
-    IO.puts("Adding obstacle to #{x},#{y}")
-
+  defp simulated_obstacle_results_in_infinite_loop?(guard_simulator, obstacle_position = {x, y}) do
     res =
       guard_simulator
       |> GuardSimulator.add_obstacle(obstacle_position)
       |> GuardSimulator.run_guard_simulation()
+
+    if res == :infinite_loop do
+      IO.puts("Infinite loop found @ obstacle_position #{x},#{y}")
+    end
 
     {obstacle_position, res == :infinite_loop}
   end
